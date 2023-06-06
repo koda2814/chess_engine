@@ -20,8 +20,10 @@ def main():
     screen = p.display.set_mode((WIDTH, HEIGHT))
     clock = p.time.Clock()
     screen.fill('white')
-    # screen.blit()
     gs = ChessEngine.GameState()
+    valid_moves = gs.get_valid_moves()
+    move_was_made = False #флаговая переменная для обозначения того, был ли сделан ход
+
     load_images()
     running = True
     sq_selected = () #выбранный квадрат доски, на которую кликнул юзер (координаты a-h, 1-8)
@@ -35,7 +37,7 @@ def main():
                 location = p.mouse.get_pos()
                 col = location[0]//SQ_SIZE
                 row = location[1]//SQ_SIZE
-                if sq_selected == (row, col): #юзр дважды кликает на один и тот же квадрат доски
+                if sq_selected == (row, col): #юзер дважды кликает на один и тот же квадрат доски
                     sq_selected = ()
                     player_clicks = []
                 else:
@@ -44,9 +46,20 @@ def main():
                 if len(player_clicks) == 2:
                     move = ChessEngine.Move(player_clicks[0], player_clicks[1], gs.board)
                     print(move.get_chess_notation())
-                    gs.make_move(move)
+                    if move in valid_moves:
+                        gs.make_move(move)
+                        move_was_made = True
                     sq_selected = () #сбрасываем клики юзера
                     player_clicks = []
+            
+            elif e.type == p.KEYDOWN: 
+                if e.key == p.K_z: #клавиша 'z' для отмены последнего хода
+                    gs.undo_move()
+                    move_was_made = True
+
+        if move_was_made:
+            valid_moves = gs.get_valid_moves()
+            move_was_made = False
 
         draw_game_state(screen, gs)
 
