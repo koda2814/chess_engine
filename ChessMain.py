@@ -24,12 +24,30 @@ def main():
     gs = ChessEngine.GameState()
     load_images()
     running = True
+    sq_selected = () #выбранный квадрат доски, на которую кликнул юзер (координаты a-h, 1-8)
+    player_clicks = [] #содержит в себе 2 квадрата доски на которую кликнул юзер (2 списка из коррдинат первого клика и коорд второго клика)
 
     while running:
         for e in p.event.get():
             if e.type == p.QUIT:
                 running = False
-        
+            elif e.type == p.MOUSEBUTTONDOWN:
+                location = p.mouse.get_pos()
+                col = location[0]//SQ_SIZE
+                row = location[1]//SQ_SIZE
+                if sq_selected == (row, col): #юзр дважды кликает на один и тот же квадрат доски
+                    sq_selected = ()
+                    player_clicks = []
+                else:
+                    sq_selected = (row, col)
+                    player_clicks.append(sq_selected)
+                if len(player_clicks) == 2:
+                    move = ChessEngine.Move(player_clicks[0], player_clicks[1], gs.board)
+                    print(move.get_chess_notation())
+                    gs.make_move(move)
+                    sq_selected = () #сбрасываем клики юзера
+                    player_clicks = []
+
         draw_game_state(screen, gs)
 
         clock.tick(MAX_FPS)
