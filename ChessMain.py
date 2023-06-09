@@ -45,12 +45,14 @@ def main():
                     player_clicks.append(sq_selected)
                 if len(player_clicks) == 2:
                     move = ChessEngine.Move(player_clicks[0], player_clicks[1], gs.board)
-                    print(move.get_chess_notation())
+                    # print(move.get_chess_notation())
                     if move in valid_moves:
                         gs.make_move(move)
                         move_was_made = True
-                    sq_selected = () #сбрасываем клики юзера
-                    player_clicks = []
+                        sq_selected = () #сбрасываем клики юзера
+                        player_clicks = []
+                    else:
+                        player_clicks = [sq_selected]
             
             elif e.type == p.KEYDOWN: 
                 if e.key == p.K_z: #клавиша 'z' для отмены последнего хода
@@ -58,6 +60,7 @@ def main():
                     move_was_made = True
 
         if move_was_made:
+            print("LEN VALID MOVES: ", len(valid_moves))
             valid_moves = gs.get_valid_moves()
             move_was_made = False
 
