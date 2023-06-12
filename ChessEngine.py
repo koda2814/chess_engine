@@ -41,7 +41,16 @@ class GameState:
         #проходная пешка
         if move.pawn_promotion:
             self.board[move.end_row][move.end_col] = move.piece_moved[0] + 'Q'
-
+        
+        #взятие на проходе
+        if move.enpassant_move:
+            self.board[move.start_row][move.end_col] = '--' #взятие пешки
+        
+        #обновление значения переменной enpassant_move
+        if move.piece_moved[1] == 'p' and abs(move.start_row - move.end_row) == 2: #только для хода пешки на 2 клетки вперед
+            self.enpassant_possible = ((move.start_row + move.end_row)//2, move.end_col)
+        else:
+            self.enpassant_possible = ()
     
     '''Отменяет последний ход'''
     def undo_move(self):
@@ -54,9 +63,20 @@ class GameState:
             self.white_king_location = (move.start_row, move.start_col)
         if move.piece_moved == 'bK':
             self.black_king_location = (move.start_row, move.start_col)
+
+        #отменить ход взятия на проходе
+        if move.enpassant_move:
+            self.board[move.end_row][move.end_col] = '--'
+            self.board[move.start_row][move.end_col] = move.piece_captured
+            self.enpassant_possible = (move.end_row, move.end_col)
+        #возврат возможности ходит пешке на 2 клетке вперед
+        if move.piece_moved[1] == 'p' and abs(move.start_row - move.end_row) == 2:
+            self.enpassant_possible = ()
+
     
     #ходы с учетом шаха короля 
     def get_valid_moves(self):
+        # temp_enpassant_possible = self.enpassant_possible
         moves = []
         self.inCheck, self.pins, self.checks = self.check_for_pins_and_checks()
         if self.whiteToMove:
@@ -95,7 +115,8 @@ class GameState:
                 self.get_king_moves(king_row, king_col, moves)
         else: #шаха нет, значит все возможные ходы имеют право быть (кроме хода связаных фигур)
             moves = self.get_all_possible_moves()
-            
+        
+        # self.enpassant_possible = temp_enpassant_possible
         return moves
 
 
@@ -137,11 +158,17 @@ class GameState:
                 if self.board[row-1][col-1][0] == 'b': #слева вражеская фигура
                     if not piece_pinned or pin_direction == (-1, -1):
                         moves.append(Move((row, col), (row-1, col-1), self.board))
+                elif (row-1, col-1) == self.enpassant_possible:
+                    if not piece_pinned or pin_direction == (-1, -1):
+                        moves.append(Move((row, col), (row-1, col-1), self.board, enpassant_move=True))
                                      
             if col+1 <= 7:
                 if self.board[row-1][col+1][0] == 'b': #справа вражеская фигура
                     if not piece_pinned or pin_direction == (-1, 1):
                         moves.append(Move((row, col), (row-1,col+1), self.board))
+                elif (row-1, col+1) == self.enpassant_possible:
+                    if not piece_pinned or pin_direction == (-1, 1):
+                        moves.append(Move((row, col), (row-1, col+1), self.board, enpassant_move=True))
         
         if not self.whiteToMove: #черные пешки
             if self.board[row+1][col] == '--': #ход на одну клетку вперед
@@ -153,10 +180,18 @@ class GameState:
                 if self.board[row+1][col-1][0] == 'w': #слева вражеская фигура
                     if not piece_pinned or pin_direction == (1, -1):
                         moves.append(Move((row, col), (row+1,col-1), self.board))
+                elif (row+1, col-1) == self.enpassant_possible:
+                    if not piece_pinned or pin_direction == (1, -1):
+                        moves.append(Move((row, col), (row+1, col-1), self.board, enpassant_move=True))
+                                     
             if col+1 <= 7:
                 if self.board[row+1][col+1][0] == 'w': #справа вражеская фигура
                     if not piece_pinned or pin_direction == (1, 1):
                         moves.append(Move((row, col), (row+1,col+1), self.board))
+                elif (row+1, col+1) == self.enpassant_possible:
+                    if not piece_pinned or pin_direction == (1, 1):
+                        moves.append(Move((row, col), (row+1, col+1), self.board, enpassant_move=True))
+                                     
 
         # return moves
 
@@ -366,17 +401,22 @@ class Move():
                      'e': 4, 'f': 5, 'g': 6, 'h': 7}
     cols_to_files = {v:k for k, v in files_to_cols.items()}
 
-    def __init__(self, sq_start, sq_end, board):
+    def __init__(self, sq_start, sq_end, board, enpassant_move = False):
         self.start_row = sq_start[0]
         self.start_col = sq_start[1]
         self.end_row = sq_end[0]
         self.end_col= sq_end[1]
         self.piece_moved = board[self.start_row][self.start_col]
         self.piece_captured = board[self.end_row][self.end_col]
+        #прозодные пешки
         self.pawn_promotion = False
         self.promotion_choice = 'Q'
         if (self.piece_moved == 'wp' and self.end_row == 0) or (self.piece_moved == 'bp' and self.end_row == 7):
             self.pawn_promotion = True
+        #взятие на проходе
+        self.enpassant_move = enpassant_move
+        if self.enpassant_move:
+            self.piece_captured = 'wp' if self.piece_moved == 'bp' else 'bp'
 
         self.moveID = self.start_row*1000 + self.start_col*100 + self.end_row*10 + self.end_col #уникальное ID каждого хода
 
