@@ -1,6 +1,31 @@
 
 class GameState:
-    """Один из основных классов, в которых отображается состояние фигур на доске"""
+    """
+    Основной класс, отвечающий за расположение фигур на доске и 
+    за правила шахмат, согласно которым можно делать тот или иной ход.
+
+    Методы:
+    ------
+    |make_move(self, Move)
+        Получает экземпляр класса Move и совершает ход на доске, изменяя список self.board
+    |undo_move(self)
+        Отменяет последний сделанный ход
+    |get_valid_moves(self)
+        Возвращает список айдишников всех валидных ходов (в частности тех ходов, когда король находится под шахом), 
+        работает совместно с методом get_all_possible_moves() и check_for_pins_and_checks()
+    |get_all_possible_moves(self)
+        Возвращает список айдишников всех ВОЗМОЖНЫХ ходов по правилам движения фигур 
+        (в том числе невозможных, например когда пешка связана слоном
+        и она идет вперед, тем самым подставляя короля под шах, что невозможно). get_valid_moves() отсеивает эти ходы,
+        полученные из метода get_all_possible_moves()
+    |get_pawn_moves(self, row, col, moves), get_knight_moves(self, row, col, moves), get_bishop_moves(...), etc
+        Получает на вход координаты фигуры и добавляет в список moves ходы, согласно которым ходит та или иная фигура
+        Также содержит в себе механизм связок (немного грязный из-за своего копипастности)
+    TODO: Дописать документацию
+
+
+    """
+    str 
     def __init__(self) -> None:
         self.board = [
             ['bR', 'bN', 'bB', 'bQ', 'bK', 'bB', 'bN', 'bR'],
@@ -20,10 +45,15 @@ class GameState:
         self.moveLog = []
         self.white_king_location = (7,4)
         self.black_king_location = (0,4)
+        self.checkmate = False
+        self.stalemate = False
         self.inCheck = False
         self.pins = []
         self.checks = []
         self.enpassant_possible = () #координаты клеток в которых возможно взятие на проходе
+        self.current_castling_rights = CastleRights(True, True, True, True)
+        self.castle_rights_log = [CastleRights(self.current_castling_rights.wks, self.current_castling_rights.bks,
+                                               self.current_castling_rights.wqs, self.current_castling_rights.bqs)]
 
     
     '''Принимает на вход коорды хода и выполняет его, но не работает с рокировкой, превращением проходной и взятием на проходе'''
@@ -45,12 +75,28 @@ class GameState:
         #взятие на проходе
         if move.enpassant_move:
             self.board[move.start_row][move.end_col] = '--' #взятие пешки
-        
         #обновление значения переменной enpassant_move
         if move.piece_moved[1] == 'p' and abs(move.start_row - move.end_row) == 2: #только для хода пешки на 2 клетки вперед
             self.enpassant_possible = ((move.start_row + move.end_row)//2, move.end_col)
         else:
             self.enpassant_possible = ()
+        
+        # ходы с рокировкой
+        if move.is_castle_move:
+            if move.end_col - move.start_col == 2:  # рокировка на королевский фланг
+                self.board[move.end_row][move.end_col - 1] = self.board[move.end_row][
+                    move.end_col + 1]  # переносим ладью на новую клетку
+                self.board[move.end_row][move.end_col + 1] = '--'  # стираем старую ладью
+            else:  # рокировка на ферзевый фланг
+                self.board[move.end_row][move.end_col + 1] = self.board[move.end_row][
+                    move.end_col - 2]  # переносим ладью на новую клетку
+                self.board[move.end_row][move.end_col - 2] = '--'  # стираем старую ладью
+        
+        #обновление прав на рокировку - когда ход совершен королем или ладьей
+        self.update_castle_rights(move)
+        self.castle_rights_log.append(CastleRights(self.current_castling_rights.wks, self.current_castling_rights.bks, 
+                                  self.current_castling_rights.wqs, self.current_castling_rights.bqs))
+
     
     '''Отменяет последний ход'''
     def undo_move(self):
@@ -73,10 +119,48 @@ class GameState:
         if move.piece_moved[1] == 'p' and abs(move.start_row - move.end_row) == 2:
             self.enpassant_possible = ()
 
+        #возврат прав на рокировку
+        self.castle_rights_log.pop() #удаляем новые права на рокировку удалением последнего элемента из списка
+        self.current_castling_rights = self.castle_rights_log[-1] #возвращаем старые права
+
+        if move.is_castle_move:
+            if move.end_col - move.start_col == 2:  # королевская сторона
+                self.board[move.end_row][move.end_col + 1] = self.board[move.end_row][move.end_col - 1]
+                self.board[move.end_row][move.end_col - 1] = '--'
+            else:  # ферзевая сторона
+                self.board[move.end_row][move.end_col - 2] = self.board[move.end_row][move.end_col + 1]
+                self.board[move.end_row][move.end_col + 1] = '--'
+        self.checkmate = False
+        self.stalemate = False
+    
+    #Обновление прав на рокировку
+    def update_castle_rights(self, move):
+        if move.piece_moved == 'wK':
+            self.current_castling_rights.wks = False
+            self.current_castling_rights.wqs = False
+        elif move.piece_moved == 'bK':
+            self.current_castling_rights.bks = False
+            self.current_castling_rights.bqs = False
+        elif move.piece_moved == 'wR':
+            if move.start_row == 7:
+                if move.start_col == 0: #левая ладья
+                    self.current_castling_rights.wqs = False
+                elif move.start_col == 7: #правая ладья
+                    self.current_castling_rights.wks = False
+        elif move.piece_moved == 'bR':
+            if move.start_row == 0:
+                if move.start_col == 0: #левая ладья
+                    self.current_castling_rights.bqs = False
+                elif move.start_col == 7: #правая ладья
+                    self.current_castling_rights.bks = False
+
+
     
     #ходы с учетом шаха короля 
     def get_valid_moves(self):
         # temp_enpassant_possible = self.enpassant_possible
+        temp_castle_rights = CastleRights(self.current_castling_rights.wks, self.current_castling_rights.bks,
+                                          self.current_castling_rights.wqs, self.current_castling_rights.bqs)
         moves = []
         self.inCheck, self.pins, self.checks = self.check_for_pins_and_checks()
         if self.whiteToMove:
@@ -110,16 +194,42 @@ class GameState:
                     if moves[i].piece_moved[1] != 'K': #ход не двигает короля, значит он должен либо защитить его, либо забрать шахующую фигуру
                         if not (moves[i].end_row, moves[i].end_col) in valid_squares: #ход не защищает от шаха
                             moves.remove(moves[i])
-                # print('CHECK', moves)
+                
             else: #двойной шах, единственный валид ходы - движение короля
                 self.get_king_moves(king_row, king_col, moves)
         else: #шаха нет, значит все возможные ходы имеют право быть (кроме хода связаных фигур)
             moves = self.get_all_possible_moves()
+            if self.whiteToMove:
+                self.get_castle_moves(self.white_king_location[0], self.white_king_location[1], moves)
+            else:
+                self.get_castle_moves(self.black_king_location[0], self.black_king_location[1], moves)
+        
+        if len(moves) == 0:
+            if self.inCheck:
+                self.checkmate = True
+                print("ШАХ И МАТ")
+            else:
+                self.stalemate = True
+        else:
+            self.checkmate = False
+            self.stalemate = False
         
         # self.enpassant_possible = temp_enpassant_possible
+        self.current_castling_rights = temp_castle_rights
         return moves
 
-
+    def square_under_attack(self, row, col):
+            """
+            Определяем является ли клетка под атакой вражеской фигуры
+            """
+            self.whiteToMove = not self.whiteToMove  # меняем право хода 
+            opponents_moves = self.get_all_possible_moves()
+            self.whiteToMove = not self.whiteToMove # меняем право хода обратно
+            for move in opponents_moves:
+                if move.end_row == row and move.end_col == col:  # клетка находится под атакой
+                    return True
+            return False
+    
     #все возможные ходы без учета шаха
     def get_all_possible_moves(self):
         # moves = [Move((6, 4), (4, 4), self.board), Move((1, 3), (2, 3), self.board)]
@@ -296,7 +406,7 @@ class GameState:
             end_col = col + col_moves[i]
             if 0<= end_row < 8 and 0 <= end_col < 8: # чтобы не выйти за границы доски
                 end_piece = self.board[end_row][end_col]
-                if end_piece[0] != ally_color:
+                if end_piece[0] != ally_color: #король не может встать на поле фигуры своего цвета, 
                     if ally_color == 'w':
                         # временное расположение короля на клетку (end_row, end_col) для последующей проверки его шахов на этой клетке
                         self.white_king_location = (end_row, end_col)
@@ -312,14 +422,30 @@ class GameState:
                     else:
                         self.black_king_location = (row, col)
 
-        # for m in king_moves:
-        #     end_row = row + m[0]
-        #     end_col = col + m[1]
-        #     if 0<= end_row < 8 and 0 <= end_col < 8: # чтобы не выйти за границы доски
-        #         end_piece = self.board[end_row][end_col]
-        #         if end_piece[0] != ally_color: # король не может встать на поле фигуры своего цвета, 
-        #                                        # но может вставть на пустое поле или на поле фигуры вражеского цвета
-        #             moves.append(Move((row, col), (end_row, end_col), self.board))
+    def get_castle_moves(self, row, col, moves):
+        """
+        Генерирует все валидных рокировки для короля с коордами (row, col) и добавляет их в список ходов
+        """
+        if self.square_under_attack(row, col):
+            return  # рокировка под шахом невозможна
+        if (self.whiteToMove and self.current_castling_rights.wks) or (
+                not self.whiteToMove and self.current_castling_rights.bks):
+            self.get_king_side_castle_moves(row, col, moves)
+        if (self.whiteToMove and self.current_castling_rights.wqs) or (
+                not self.whiteToMove and self.current_castling_rights.bqs):
+            self.get_queen_side_castle_moves(row, col, moves)
+
+    def get_king_side_castle_moves(self, row, col, moves):
+        if self.board[row][col + 1] == '--' and self.board[row][col + 2] == '--':
+            if not self.square_under_attack(row, col + 1) and not self.square_under_attack(row, col + 2):
+                moves.append(Move((row, col), (row, col + 2), self.board, is_castle_move=True))
+
+    def get_queen_side_castle_moves(self, row, col, moves):
+        if self.board[row][col - 1] == '--' and self.board[row][col - 2] == '--' and self.board[row][col - 3] == '--':
+            if not self.square_under_attack(row, col - 1) and not self.square_under_attack(row, col - 2):
+                moves.append(Move((row, col), (row, col - 2), self.board, is_castle_move=True))
+        
+        
 
     def check_for_pins_and_checks(self):
         pins = [] # клетки где находятся связанные фигуры своего цвета и направление откуда они связаны
@@ -390,6 +516,12 @@ class GameState:
         # print('INCHECK: ', inCheck)
         return inCheck, pins, checks
 
+class CastleRights():
+    def __init__(self, wks, bks, wqs, bqs) -> None:
+        self.wks = wks
+        self.bks = bks
+        self.wqs = wqs
+        self.bqs = bqs
 
 
 class Move():
@@ -401,7 +533,7 @@ class Move():
                      'e': 4, 'f': 5, 'g': 6, 'h': 7}
     cols_to_files = {v:k for k, v in files_to_cols.items()}
 
-    def __init__(self, sq_start, sq_end, board, enpassant_move = False):
+    def __init__(self, sq_start, sq_end, board, enpassant_move = False, is_castle_move=False):
         self.start_row = sq_start[0]
         self.start_col = sq_start[1]
         self.end_row = sq_end[0]
@@ -417,6 +549,8 @@ class Move():
         self.enpassant_move = enpassant_move
         if self.enpassant_move:
             self.piece_captured = 'wp' if self.piece_moved == 'bp' else 'bp'
+        
+        self.is_castle_move = is_castle_move
 
         self.moveID = self.start_row*1000 + self.start_col*100 + self.end_row*10 + self.end_col #уникальное ID каждого хода
 
